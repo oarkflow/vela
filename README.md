@@ -115,6 +115,55 @@ and maps with non-string keys are unsupported. `UnmarshalIntoWithDictionary`
 and `UnmarshalIntoWithLimits` provide the corresponding dictionary and limit
 variants.
 
+### Borrowed walk and HTTP
+
+For a validated view, `WalkMap` and `WalkArray` visit nested values in wire
+order without creating a Go map or slice. `Key.Equal` compares map keys
+without allocating; call `Key.String` only when a Go string is needed. The
+borrowed keys and values remain valid while the original view's buffer stays
+unchanged. A full four-field map walk with an integer read measures 0 B/op and
+0 allocs/op in `BenchmarkWalkMapNoAllocation`.
+
+```go
+view, err := vela.Open(payload)
+if err != nil { panic(err) }
+err = view.WalkMap(func(key vela.Key, value vela.View) bool {
+    if key.Equal("id") {
+        id, _ := value.Uint()
+        _ = id
+    }
+    return true // false stops early
+})
+if err != nil { panic(err) }
+```
+
+HTTP supports compact binary bodies (`application/vnd.vela`) and
+human-readable VELA text bodies (`application/vnd.vela+text`). Both represent
+raw values without the `.vlf` file envelope.
+Use `NewHTTPTextRequest` to send typed Go values as VELA text;
+`DecodeHTTPRequest` accepts either media type, and
+`WriteHTTPResponseForRequest` uses the request's `Accept` header to return
+VELA text or binary. `MarshalText` and `UnmarshalTextInto` handle text outside
+HTTP. The text grammar is specified in [WIRE.md](WIRE.md).
+
+Run either self-contained client/server example:
+
+```bash
+go run ./examples/http         # NewHTTPRequest, DecodeHTTPRequest, WriteHTTPResponse, DecodeHTTPResponse
+go run ./examples/http/manual  # Marshal, net/http, UnmarshalInto
+```
+
+The [helper example](examples/http/main.go) sends a typed request to a local
+HTTP handler and decodes its typed reply. The [manual example](examples/http/manual/main.go)
+shows the same flow using `Marshal`, a request body, and `UnmarshalInto`.
+For a terminal-to-server request with `curl`, use the
+[curl example](examples/http/CURL.md). It sends a readable VELA value such as
+`{id=u42;text="hello"}` and receives readable VELA text in response.
+See [JSON versus VELA HTTP request/response](benchmarks-http.md) for payload
+examples, body sizes, and measured in-process and localhost exchanges.
+The HTTP decoders apply `Limits.MaxBytes` to the complete body. The standard
+limit is 64 MiB; set a smaller limit for endpoints that accept small records.
+
 ### Atomic file serialization and lazy file views
 
 ```go

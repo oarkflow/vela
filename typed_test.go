@@ -2,6 +2,7 @@ package vela
 
 import (
 	"errors"
+	"fmt"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -135,5 +136,39 @@ func TestTypedVLFFileRoundTrip(t *testing.T) {
 	}
 	if !reflect.DeepEqual(in, out) {
 		t.Fatalf("got %#v, want %#v", out, in)
+	}
+}
+
+func TestTypedDuplicateStructFields(t *testing.T) {
+	// A repeated wire key keeps the first value, including for structs with
+	// enough fields to use the decoder's larger duplicate tracker.
+	for _, count := range []int{1, 65} {
+		fields := make([]reflect.StructField, count)
+		for i := range fields {
+			fields[i] = reflect.StructField{
+				Name: fmt.Sprintf("Field%d", i),
+				Type: reflect.TypeOf(uint64(0)),
+				Tag:  reflect.StructTag(fmt.Sprintf(`vela:"field%d"`, i)),
+			}
+		}
+		target := reflect.New(reflect.StructOf(fields))
+		w := NewWriter(nil)
+		w.BeginMap(2)
+		key := fmt.Sprintf("field%d", count-1)
+		w.Key(key)
+		w.Uint(7)
+		w.Key(key)
+		w.Uint(9)
+		w.EndMap()
+		data, err := w.Finish()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := UnmarshalInto(data, target.Interface()); err != nil {
+			t.Fatal(err)
+		}
+		if got := target.Elem().Field(count - 1).Uint(); got != 7 {
+			t.Fatalf("%d fields: got %d, want 7", count, got)
+		}
 	}
 }

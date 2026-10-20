@@ -9,6 +9,49 @@ UTF-8 is mandatory for strings and map keys. `0x40` null, `0x41` false,
 `0x42` true, `0x43` float32 and `0x44` float64. Bit-kind 111 is reserved;
 unknown extensions are rejected.
 
+## Human-readable VELA text v1 for HTTP
+
+`application/vnd.vela+text` carries one VELA value as UTF-8 text. It is a
+different encoding of the same value model, not JSON and not a `VLF1` file.
+The grammar is:
+
+```text
+value = "null" | "true" | "false" | "u" decimal-uint | "i" decimal-int
+      | "f" float | "f32(" float ")" | "t" quoted-datetime
+      | "d" quoted-duration | quoted-string | "s" quoted-string
+      | "b64" quoted-base64 | array | map
+array = "[" [value {";" value}] "]"
+map   = "{" [key "=" value {";" key "=" value}] "}"
+key   = identifier | quoted-string
+identifier = ASCII letter or "_", followed by ASCII letters, digits or "_"
+```
+
+Whitespace (space, tab, CR or LF) is allowed between tokens. Decimal integers
+are base 10 and checked against `uint64` and `int64` ranges. Floats use decimal
+or exponent notation, plus `NaN`, `+Inf` and `-Inf`; `f` is float64 and `f32`
+preserves float32 width. `t` uses RFC3339Nano timestamps and `d` uses signed
+durations with `ns`, `us`, `ms`, `s`, `m`, or `h` units. Strings can be written
+as either `"hello"` or `s"hello"`; encoders emit the shorter form. Quoted
+strings use RFC 8259 JSON **string escaping**;
+the surrounding VELA syntax and typed values are not JSON. `b64` uses RFC 4648
+standard Base64 with padding. Map keys are UTF-8 strings; duplicate keys and
+trailing input are rejected. Encoders sort keys by their UTF-8 byte sequence.
+
+Example request and response:
+
+```text
+{id=u42;text="hello"}
+{id=u42;text="received: hello"}
+```
+
+For the first value, a binary encoding in the same field order is
+`c2 05 69 64 1f 2a 09 74 65 78 74 85 68 65 6c 6c 6f`.
+
+The compact binary HTTP media type is `application/vnd.vela`. `.vlf` files
+use the binary VLF1 envelope defined below.
+
+## Binary value kinds
+
 | Kind | Contents |
 |---|---|
 | 0 | unsigned integer 0..uint64 max |

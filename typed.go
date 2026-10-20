@@ -224,22 +224,33 @@ func (r *Reader) readTyped(dst reflect.Value, depth int) error {
 			return ErrInvalid
 		}
 		fields := fieldsFor(dst, false)
-		seen := make(map[string]bool, len(fields))
+		var seen uint64
+		var extraSeen []uint64
+		if len(fields) > 64 {
+			extraSeen = make([]uint64, (len(fields)+63)/64)
+		}
 		for i := uint64(0); i < n; i++ {
 			name, err := r.key()
 			if err != nil {
 				return err
 			}
 			index := -1
-			if !seen[name] {
-				for _, f := range fields {
-					if f.name == name {
-						index = f.index
-						break
-					}
+			for j, f := range fields {
+				if f.name != name {
+					continue
 				}
+				word, bit := j/64, uint64(1)<<uint(j%64)
+				if extraSeen == nil {
+					if seen&bit == 0 {
+						seen |= bit
+						index = f.index
+					}
+				} else if extraSeen[word]&bit == 0 {
+					extraSeen[word] |= bit
+					index = f.index
+				}
+				break
 			}
-			seen[name] = true
 			if index < 0 {
 				if err := r.skip(depth + 1); err != nil {
 					return err
@@ -264,6 +275,10 @@ func implementsTextUnmarshaler(v reflect.Value) bool {
 func assignValue(dst reflect.Value, src any) error {
 	if src == nil {
 		dst.SetZero()
+		return nil
+	}
+	if value := reflect.ValueOf(src); value.Type().AssignableTo(dst.Type()) {
+		dst.Set(value)
 		return nil
 	}
 	if dst.CanAddr() {
